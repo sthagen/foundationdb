@@ -137,7 +137,8 @@ public:
 	int64_t SHARD_MAX_BYTES_PER_KSEC, // Shards with more than this bandwidth will be split immediately
 		SHARD_MIN_BYTES_PER_KSEC,     // Shards with more than this bandwidth will not be merged
 		SHARD_SPLIT_BYTES_PER_KSEC;   // When splitting a shard, it is split into pieces with less than this bandwidth
-	int64_t SHARD_MAX_BYTES_READ_PER_KSEC;
+	double SHARD_MAX_READ_DENSITY_RATIO;
+	int64_t SHARD_READ_HOT_BANDWITH_MIN_PER_KSECONDS;
 	double SHARD_MAX_BYTES_READ_PER_KSEC_JITTER;
 	double STORAGE_METRIC_TIMEOUT;
 	double METRIC_DELAY;
@@ -380,6 +381,7 @@ public:
 
 	int64_t TARGET_BYTES_PER_STORAGE_SERVER;
 	int64_t SPRING_BYTES_STORAGE_SERVER;
+	int64_t AUTO_TAG_THROTTLE_STORAGE_QUEUE_BYTES;
 	int64_t TARGET_BYTES_PER_STORAGE_SERVER_BATCH;
 	int64_t SPRING_BYTES_STORAGE_SERVER_BATCH;
 
@@ -392,8 +394,18 @@ public:
 	int64_t TLOG_RECOVER_MEMORY_LIMIT;
 	double TLOG_IGNORE_POP_AUTO_ENABLE_DELAY;
 
-	// disk snapshot
-	double SNAP_CREATE_MAX_TIMEOUT;
+	int64_t MAX_MANUAL_THROTTLED_TRANSACTION_TAGS;
+	int64_t MAX_AUTO_THROTTLED_TRANSACTION_TAGS;
+	double MIN_TAG_COST;
+	double AUTO_THROTTLE_TARGET_TAG_BUSYNESS;
+	double AUTO_THROTTLE_RAMP_TAG_BUSYNESS;
+	double AUTO_TAG_THROTTLE_RAMP_UP_TIME;
+	double AUTO_TAG_THROTTLE_DURATION;
+	double TAG_THROTTLE_PUSH_INTERVAL;
+	double AUTO_TAG_THROTTLE_START_AGGREGATION_TIME;
+	double AUTO_TAG_THROTTLE_UPDATE_FREQUENCY;
+	double TAG_THROTTLE_EXPIRED_CLEANUP_INTERVAL;
+	bool AUTO_TAG_THROTTLING_ENABLED;
 
 	double MAX_TRANSACTIONS_PER_BYTE;
 
@@ -409,6 +421,7 @@ public:
 	int MAX_TPS_HISTORY_SAMPLES;
 	int NEEDED_TPS_HISTORY_SAMPLES;
 	int64_t TARGET_DURABILITY_LAG_VERSIONS;
+	int64_t AUTO_TAG_THROTTLE_DURABILITY_LAG_VERSIONS;
 	int64_t TARGET_DURABILITY_LAG_VERSIONS_BATCH;
 	int64_t DURABILITY_LAG_UNLIMITED_THRESHOLD;
 	double INITIAL_DURABILITY_LAG_MULTIPLIER;
@@ -417,6 +430,9 @@ public:
 
 	double STORAGE_SERVER_LIST_FETCH_TIMEOUT;
 
+	// disk snapshot
+	double SNAP_CREATE_MAX_TIMEOUT;
+
 	//Storage Metrics
 	double STORAGE_METRICS_AVERAGE_INTERVAL;
 	double STORAGE_METRICS_AVERAGE_INTERVAL_PER_KSECONDS;
@@ -424,6 +440,7 @@ public:
 	int64_t IOPS_UNITS_PER_SAMPLE;
 	int64_t BANDWIDTH_UNITS_PER_SAMPLE;
 	int64_t BYTES_READ_UNITS_PER_SAMPLE;
+	int64_t READ_HOT_SUB_RANGE_CHUNK_SIZE;
 	int64_t EMPTY_READ_PENALTY;
 	bool READ_SAMPLING_ENABLED;
 
@@ -458,6 +475,10 @@ public:
 	int BEHIND_CHECK_COUNT;
 	int64_t BEHIND_CHECK_VERSIONS;
 	double WAIT_METRICS_WRONG_SHARD_CHANCE;
+	int MAX_SHARED_LOAD_BALANCE_DELAY;
+	int64_t MIN_TAG_PAGES_READ_RATE;
+	double READ_TAG_MEASUREMENT_INTERVAL;
+	int64_t OPERATION_COST_BYTE_FACTOR;
 
 	//Wait Failure
 	int MAX_OUTSTANDING_WAIT_FAILURE_REQUESTS;
@@ -471,6 +492,7 @@ public:
 	double DEGRADED_WARNING_RESET_DELAY;
 	int64_t TRACE_LOG_FLUSH_FAILURE_CHECK_INTERVAL_SECONDS;
 	double TRACE_LOG_PING_TIMEOUT_SECONDS;
+	int DELAY_STORAGE_CANDIDACY_SECONDS;  // Listen for a leader for N seconds, and if not heard, then try to become the leader.
 	double DBINFO_FAILED_DELAY;
 
 	// Test harness
@@ -531,6 +553,9 @@ public:
 	int64_t FASTRESTORE_LOADER_SEND_MUTATION_MSG_BYTES; // desired size of mutation message sent from loader to appliers
 	bool FASTRESTORE_GET_RANGE_VERSIONS_EXPENSIVE; // parse each range file to get (range, version) it has?
 	int64_t FASTRESTORE_REQBATCH_PARALLEL; // number of requests to wait on for getBatchReplies()
+	bool FASTRESTORE_REQBATCH_LOG; // verbose log information for getReplyBatches
+	int FASTRESTORE_TXN_CLEAR_MAX; // threshold to start tracking each clear op in a txn
+	int FASTRESTORE_TXN_RETRY_MAX; // threshold to start output error on too many retries
 
 	ServerKnobs();
 	void initialize(bool randomize = false, ClientKnobs* clientKnobs = NULL, bool isSimulated = false);
