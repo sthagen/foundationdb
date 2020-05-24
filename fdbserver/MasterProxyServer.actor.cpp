@@ -38,6 +38,7 @@
 #include "fdbserver/LogSystem.h"
 #include "fdbserver/LogSystemDiskQueueAdapter.h"
 #include "fdbserver/MasterInterface.h"
+#include "fdbserver/MutationTracking.h"
 #include "fdbserver/RecoveryState.h"
 #include "fdbserver/ServerDBInfo.h"
 #include "fdbserver/WaitFailure.h"
@@ -748,7 +749,7 @@ ACTOR Future<Void> addBackupMutations(ProxyCommitData* self, std::map<Key, Mutat
 			toCommit->addTags(tags);
 			toCommit->addTypedMessage(backupMutation);
 
-//			if (debugMutation("BackupProxyCommit", commitVersion, backupMutation)) {
+//			if (DEBUG_MUTATION("BackupProxyCommit", commitVersion, backupMutation)) {
 //				TraceEvent("BackupProxyCommitTo", self->dbgid).detail("To", describe(tags)).detail("BackupMutation", backupMutation.toString())
 //					.detail("BackupMutationSize", val.size()).detail("Version", commitVersion).detail("DestPath", logRangeMutation.first)
 //					.detail("PartIndex", part).detail("PartIndexEndian", bigEndian32(part)).detail("PartData", backupMutation.param1);
@@ -1066,8 +1067,7 @@ ACTOR Future<Void> commitBatch(
 						self->singleKeyMutationEvent->log();
 					}
 
-					if (debugMutation("ProxyCommit", commitVersion, m))
-						TraceEvent("ProxyCommitTo", self->dbgid).detail("To", describe(tags)).detail("Mutation", m.toString()).detail("Version", commitVersion);
+					DEBUG_MUTATION("ProxyCommit", commitVersion, m).detail("Dbgid", self->dbgid).detail("To", tags).detail("Mutation", m);
 					
 					toCommit.addTags(tags);
 					if(self->cacheInfo[m.param1]) {
@@ -1082,8 +1082,7 @@ ACTOR Future<Void> commitBatch(
 					++firstRange;
 					if (firstRange == ranges.end()) {
 						// Fast path
-						if (debugMutation("ProxyCommit", commitVersion, m))
-							TraceEvent("ProxyCommitTo", self->dbgid).detail("To", describe(ranges.begin().value().tags)).detail("Mutation", m.toString()).detail("Version", commitVersion);
+						DEBUG_MUTATION("ProxyCommit", commitVersion, m).detail("Dbgid", self->dbgid).detail("To", ranges.begin().value().tags).detail("Mutation", m);
 
 						ranges.begin().value().populateTags();
 						toCommit.addTags(ranges.begin().value().tags);
@@ -1095,8 +1094,7 @@ ACTOR Future<Void> commitBatch(
 							r.value().populateTags();
 							allSources.insert(r.value().tags.begin(), r.value().tags.end());
 						}
-						if (debugMutation("ProxyCommit", commitVersion, m))
-							TraceEvent("ProxyCommitTo", self->dbgid).detail("To", describe(allSources)).detail("Mutation", m.toString()).detail("Version", commitVersion);
+						DEBUG_MUTATION("ProxyCommit", commitVersion, m).detail("Dbgid", self->dbgid).detail("To", allSources).detail("Mutation", m);
 
 						toCommit.addTags(allSources);
 					}
@@ -1215,7 +1213,7 @@ ACTOR Future<Void> commitBatch(
 	computeDuration += g_network->timer() - computeStart;
 	if(computeDuration > SERVER_KNOBS->MIN_PROXY_COMPUTE && batchOperations > 0) {
 		double computePerOperation = computeDuration/batchOperations;
-		if(computePerOperation <= self->commitComputePerOperation[latencyBucket] || self->commitComputePerOperation[latencyBucket] == 0.0) {
+		if(computePerOperation <= self->commitComputePerOperation[latencyBucket]) {
 			self->commitComputePerOperation[latencyBucket] = computePerOperation;
 		} else {
 			self->commitComputePerOperation[latencyBucket] = SERVER_KNOBS->PROXY_COMPUTE_GROWTH_RATE*computePerOperation + ((1.0-SERVER_KNOBS->PROXY_COMPUTE_GROWTH_RATE)*self->commitComputePerOperation[latencyBucket]);
@@ -1758,6 +1756,25 @@ ACTOR Future<Void> healthMetricsRequestServer(MasterProxyInterface proxy, GetHea
 	}
 }
 
+ACTOR Future<Void> ddMetricsRequestServer(MasterProxyInterface proxy, Reference<AsyncVar<ServerDBInfo>> db)
+{
+	loop {
+		choose {
+			when(state GetDDMetricsRequest req = waitNext(proxy.getDDMetrics.getFuture()))
+			{
+				ErrorOr<GetDataDistributorMetricsReply> reply = wait(errorOr(db->get().distributor.get().dataDistributorMetrics.getReply(GetDataDistributorMetricsRequest(req.keys, req.shardLimit))));
+				if ( reply.isError() ) {
+					req.reply.sendError(reply.getError());
+				} else {
+					GetDDMetricsReply newReply;
+					newReply.storageMetricsList = reply.get().storageMetricsList;
+					req.reply.send(newReply);
+				}
+			}
+		}
+	}
+}
+
 ACTOR Future<Void> monitorRemoteCommitted(ProxyCommitData* self) {
 	loop {
 		wait(delay(0)); //allow this actor to be cancelled if we are removed after db changes.
@@ -1962,6 +1979,7 @@ ACTOR Future<Void> masterProxyServerCore(
 	state GetHealthMetricsReply detailedHealthMetricsReply;
 
 	addActor.send( waitFailureServer(proxy.waitFailure.getFuture()) );
+	addActor.send( traceRole(Role::MASTER_PROXY, proxy.id()) );
 
 	//TraceEvent("ProxyInit1", proxy.id());
 
@@ -1997,6 +2015,7 @@ ACTOR Future<Void> masterProxyServerCore(
 	addActor.send(readRequestServer(proxy, addActor, &commitData));
 	addActor.send(rejoinServer(proxy, &commitData));
 	addActor.send(healthMetricsRequestServer(proxy, &healthMetricsReply, &detailedHealthMetricsReply));
+	addActor.send(ddMetricsRequestServer(proxy, db));
 
 	// wait for txnStateStore recovery
 	wait(success(commitData.txnStateStore->readValue(StringRef())));

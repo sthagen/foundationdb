@@ -387,7 +387,8 @@ void ServerKnobs::initialize(bool randomize, ClientKnobs* clientKnobs, bool isSi
 	init( BACKUP_TIMEOUT,                                        0.4 );
 	init( BACKUP_NOOP_POP_DELAY,                                 5.0 );
 	init( BACKUP_FILE_BLOCK_BYTES,                       1024 * 1024 );
-	init( BACKUP_UPLOAD_DELAY,                                  10.0 ); if( randomize && BUGGIFY ) BACKUP_UPLOAD_DELAY = deterministicRandom()->random01() * 20; // TODO: Increase delay range
+	init( BACKUP_LOCK_BYTES,                                     3e9 ); if(randomize && BUGGIFY) BACKUP_LOCK_BYTES = deterministicRandom()->randomInt(1024, 4096) * 1024;
+	init( BACKUP_UPLOAD_DELAY,                                  10.0 ); if(randomize && BUGGIFY) BACKUP_UPLOAD_DELAY = deterministicRandom()->random01() * 60;
 
 	//Cluster Controller
 	init( CLUSTER_CONTROLLER_LOGGING_DELAY,                      5.0 );
@@ -546,10 +547,10 @@ void ServerKnobs::initialize(bool randomize, ClientKnobs* clientKnobs, bool isSi
 	init( BEHIND_CHECK_COUNT,                                      2 );
 	init( BEHIND_CHECK_VERSIONS,             5 * VERSIONS_PER_SECOND );
 	init( WAIT_METRICS_WRONG_SHARD_CHANCE,   isSimulated ? 1.0 : 0.1 );
-	init( MAX_SHARED_LOAD_BALANCE_DELAY,                          20 );
 	init( MIN_TAG_PAGES_READ_RATE,                             1.0e4 ); if( randomize && BUGGIFY ) MIN_TAG_PAGES_READ_RATE = 0;
 	init( READ_TAG_MEASUREMENT_INTERVAL,                        30.0 ); if( randomize && BUGGIFY ) READ_TAG_MEASUREMENT_INTERVAL = 1.0;
 	init( OPERATION_COST_BYTE_FACTOR,                          16384 ); if( randomize && BUGGIFY ) OPERATION_COST_BYTE_FACTOR = 4096;
+	init( PREFIX_COMPRESS_KVS_MEM_SNAPSHOTS,                   false ); if( randomize && BUGGIFY ) PREFIX_COMPRESS_KVS_MEM_SNAPSHOTS = true;
 
 	//Wait Failure
 	init( MAX_OUTSTANDING_WAIT_FAILURE_REQUESTS,                 250 ); if( randomize && BUGGIFY ) MAX_OUTSTANDING_WAIT_FAILURE_REQUESTS = 2;
@@ -563,7 +564,8 @@ void ServerKnobs::initialize(bool randomize, ClientKnobs* clientKnobs, bool isSi
 	init( DEGRADED_WARNING_RESET_DELAY,                   7*24*60*60 );
 	init( TRACE_LOG_FLUSH_FAILURE_CHECK_INTERVAL_SECONDS,         10 );
 	init( TRACE_LOG_PING_TIMEOUT_SECONDS,                        5.0 );
-	init( DELAY_STORAGE_CANDIDACY_SECONDS,                        10 ); if ( randomize && BUGGIFY ) DELAY_STORAGE_CANDIDACY_SECONDS = 10;
+	init( MIN_DELAY_STORAGE_CANDIDACY_SECONDS,                  10.0 );
+	init( MAX_DELAY_STORAGE_CANDIDACY_SECONDS,                  30.0 ); 
 	init( DBINFO_FAILED_DELAY,                                   1.0 );
 
 	// Test harness
@@ -624,6 +626,17 @@ void ServerKnobs::initialize(bool randomize, ClientKnobs* clientKnobs, bool isSi
 	init( FASTRESTORE_REQBATCH_LOG,                            false ); if( randomize && BUGGIFY ) { FASTRESTORE_REQBATCH_LOG = deterministicRandom()->random01() < 0.2 ? true : false; }
 	init( FASTRESTORE_TXN_CLEAR_MAX,                            1000 ); if( randomize && BUGGIFY ) { FASTRESTORE_TXN_CLEAR_MAX = deterministicRandom()->random01() * 100 + 1; }
 	init( FASTRESTORE_TXN_RETRY_MAX,                              10 ); if( randomize && BUGGIFY ) { FASTRESTORE_TXN_RETRY_MAX = deterministicRandom()->random01() * 100 + 1; }
+
+	init( REDWOOD_DEFAULT_PAGE_SIZE,                            4096 );
+	init( REDWOOD_KVSTORE_CONCURRENT_READS,                       64 );
+	init( REDWOOD_PAGE_REBUILD_FILL_FACTOR,                     0.66 );
+	init( REDWOOD_LAZY_CLEAR_BATCH_SIZE_PAGES,                    10 );
+	init( REDWOOD_LAZY_CLEAR_MIN_PAGES,                            0 );
+	init( REDWOOD_LAZY_CLEAR_MAX_PAGES,                          1e6 );
+	init( REDWOOD_REMAP_CLEANUP_BATCH_SIZE,                     5000 );
+	init( REDWOOD_REMAP_CLEANUP_VERSION_LAG_MIN,                   4 );
+	init( REDWOOD_REMAP_CLEANUP_VERSION_LAG_MAX,                  15 );
+	init( REDWOOD_LOGGING_INTERVAL,                              5.0 );
 
 	// clang-format on
 

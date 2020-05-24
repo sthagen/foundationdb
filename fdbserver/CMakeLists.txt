@@ -46,8 +46,10 @@ set(FDBSERVER_SRCS
   MasterInterface.h
   MasterProxyServer.actor.cpp
   masterserver.actor.cpp
-  MoveKeys.actor.cpp
+  MutationTracking.h
+  MutationTracking.cpp
   MoveKeys.actor.h
+  MoveKeys.actor.cpp
   networktest.actor.cpp
   NetworkTest.h
   OldTLogServer_4_6.actor.cpp
@@ -132,6 +134,7 @@ set(FDBSERVER_SRCS
   workloads/ConsistencyCheck.actor.cpp
   workloads/CpuProfiler.actor.cpp
   workloads/Cycle.actor.cpp
+  workloads/DataDistributionMetrics.actor.cpp
   workloads/DDBalance.actor.cpp
   workloads/DDMetrics.actor.cpp
   workloads/DDMetricsExclude.actor.cpp

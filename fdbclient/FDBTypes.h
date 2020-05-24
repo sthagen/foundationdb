@@ -108,6 +108,13 @@ struct struct_like_traits<Tag> : std::true_type {
 	}
 };
 
+template<>
+struct Traceable<Tag> : std::true_type {
+	static std::string toString(const Tag& value) {
+		return value.toString();
+	}
+};
+
 static const Tag invalidTag {tagLocalitySpecial, 0};
 static const Tag txsTag {tagLocalitySpecial, 1};
 static const Tag cacheTag {tagLocalitySpecial, 2};
@@ -222,10 +229,24 @@ std::string describe( std::vector<T> const& items, int max_items = -1 ) {
 	return describeList(items, max_items);
 }
 
+template<typename T>
+struct Traceable<std::vector<T>> : std::true_type {
+	static std::string toString(const std::vector<T>& value) {
+		return describe(value);
+	}
+};
+
 template <class T>
 std::string describe( std::set<T> const& items, int max_items = -1 ) {
 	return describeList(items, max_items);
 }
+
+template<typename T>
+struct Traceable<std::set<T>> : std::true_type {
+	static std::string toString(const std::set<T>& value) {
+		return describe(value);
+	}
+};
 
 std::string printable( const StringRef& val );
 std::string printable( const std::string& val );
@@ -886,7 +907,7 @@ inline bool addressExcluded( std::set<AddressExclusion> const& exclusions, Netwo
 }
 
 struct ClusterControllerPriorityInfo {
-	enum DCFitness { FitnessPrimary, FitnessRemote, FitnessPreferred, FitnessUnknown, FitnessBad }; //cannot be larger than 7 because of leader election mask
+	enum DCFitness { FitnessPrimary, FitnessRemote, FitnessPreferred, FitnessUnknown, FitnessNotPreferred, FitnessBad }; //cannot be larger than 7 because of leader election mask
 
 	static DCFitness calculateDCFitness(Optional<Key> const& dcId, std::vector<Optional<Key>> const& dcPriority) {
 		if(!dcPriority.size()) {
@@ -895,7 +916,7 @@ struct ClusterControllerPriorityInfo {
 			if(dcId == dcPriority[0]) {
 				return FitnessPreferred;
 			} else {
-				return FitnessUnknown;
+				return FitnessNotPreferred;
 			}
 		} else {
 			if(dcId == dcPriority[0]) {
@@ -995,6 +1016,21 @@ struct HealthMetrics {
 	template <class Ar>
 	void serialize(Ar& ar) {
 		serializer(ar, worstStorageQueue, worstStorageDurabilityLag, worstTLogQueue, tpsLimit, batchLimited, storageStats, tLogQueue);
+	}
+};
+
+struct DDMetricsRef {
+	int64_t shardBytes;
+	KeyRef beginKey;
+
+	DDMetricsRef() : shardBytes(0) {}
+	DDMetricsRef(int64_t bytes, KeyRef begin) : shardBytes(bytes), beginKey(begin) {}
+	DDMetricsRef(Arena& a, const DDMetricsRef& copyFrom)
+	  : shardBytes(copyFrom.shardBytes), beginKey(a, copyFrom.beginKey) {}
+
+	template <class Ar>
+	void serialize(Ar& ar) {
+		serializer(ar, shardBytes, beginKey);
 	}
 };
 

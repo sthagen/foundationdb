@@ -2825,18 +2825,20 @@ ACTOR Future<Void> updateDatacenterVersionDifference( ClusterControllerData *sel
 			if(onChange.isReady()) {
 				break;
 			}
+			
+			if(primaryMetrics.get().v > 0 && remoteMetrics.get().v > 0) {
+				bool oldDifferenceTooLarge = !self->versionDifferenceUpdated || self->datacenterVersionDifference >= SERVER_KNOBS->MAX_VERSION_DIFFERENCE;
+				self->versionDifferenceUpdated = true;
+				self->datacenterVersionDifference = primaryMetrics.get().v - remoteMetrics.get().v;
 
-			bool oldDifferenceTooLarge = !self->versionDifferenceUpdated || self->datacenterVersionDifference >= SERVER_KNOBS->MAX_VERSION_DIFFERENCE;
-			self->versionDifferenceUpdated = true;
-			self->datacenterVersionDifference = primaryMetrics.get().v - remoteMetrics.get().v;
+				if(oldDifferenceTooLarge && self->datacenterVersionDifference < SERVER_KNOBS->MAX_VERSION_DIFFERENCE) {
+					checkOutstandingRequests(self);
+				}
 
-			if(oldDifferenceTooLarge && self->datacenterVersionDifference < SERVER_KNOBS->MAX_VERSION_DIFFERENCE) {
-				checkOutstandingRequests(self);
-			}
-
-			if(now() - lastLogTime > SERVER_KNOBS->CLUSTER_CONTROLLER_LOGGING_DELAY) {
-				lastLogTime = now();
-				TraceEvent("DatacenterVersionDifference", self->id).detail("Difference", self->datacenterVersionDifference);
+				if(now() - lastLogTime > SERVER_KNOBS->CLUSTER_CONTROLLER_LOGGING_DELAY) {
+					lastLogTime = now();
+					TraceEvent("DatacenterVersionDifference", self->id).detail("Difference", self->datacenterVersionDifference);
+				}
 			}
 
 			wait( delay(SERVER_KNOBS->VERSION_LAG_METRIC_INTERVAL) || onChange );
@@ -3092,6 +3094,7 @@ ACTOR Future<Void> clusterControllerCore( ClusterControllerFullInterface interf,
 	self.addActor.send( monitorStorageCache(&self) );
 	self.addActor.send( dbInfoUpdater(&self) );
 	self.addActor.send( traceCounters("ClusterControllerMetrics", self.id, SERVER_KNOBS->STORAGE_LOGGING_DELAY, &self.clusterControllerMetrics, self.id.toString() + "/ClusterControllerMetrics") );
+	self.addActor.send( traceRole(Role::CLUSTER_CONTROLLER, interf.id()) );
 	//printf("%s: I am the cluster controller\n", g_network->getLocalAddress().toString().c_str());
 
 	loop choose {
