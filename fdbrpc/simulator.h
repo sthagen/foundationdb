@@ -23,6 +23,7 @@
 #pragma once
 
 #include "flow/flow.h"
+#include "flow/Histogram.h"
 #include "fdbrpc/FailureMonitor.h"
 #include "fdbrpc/Locality.h"
 #include "fdbrpc/IAsyncFile.h"
@@ -54,7 +55,9 @@ public:
 		LocalityData	locality;
 		ProcessClass startingClass;
 		TDMetricCollection tdmetrics;
+		HistogramRegistry histograms;
 		std::map<NetworkAddress, Reference<IListener>> listenerMap;
+		std::map<NetworkAddress, Reference<IUDPSocket>> boundUDPSockets;
 		bool failed;
 		bool excluded;
 		bool cleared;
