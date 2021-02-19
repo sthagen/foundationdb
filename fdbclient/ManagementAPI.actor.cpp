@@ -1009,6 +1009,69 @@ ACTOR Future<std::vector<NetworkAddress>> getCoordinators( Database cx ) {
 	}
 }
 
+ACTOR Future<Optional<CoordinatorsResult>> changeQuorumChecker(Transaction* tr, Reference<IQuorumChange> change,
+                                                               std::vector<NetworkAddress>* desiredCoordinators) {
+	tr->setOption( FDBTransactionOptions::LOCK_AWARE );
+	tr->setOption( FDBTransactionOptions::USE_PROVISIONAL_PROXIES );
+	tr->setOption( FDBTransactionOptions::PRIORITY_SYSTEM_IMMEDIATE );
+	Optional<Value> currentKey = wait( tr->get( coordinatorsKey ) );
+
+	if (!currentKey.present())
+		return CoordinatorsResult::BAD_DATABASE_STATE;  // Someone deleted this key entirely?
+
+	state ClusterConnectionString old( currentKey.get().toString() );
+	if ( tr->getDatabase()->getConnectionFile() && old.clusterKeyName().toString() != tr->getDatabase()->getConnectionFile()->getConnectionString().clusterKeyName() )
+		return CoordinatorsResult::BAD_DATABASE_STATE;  // Someone changed the "name" of the database??
+
+	state CoordinatorsResult result = CoordinatorsResult::SUCCESS;
+	if(!desiredCoordinators->size()) {
+		std::vector<NetworkAddress> _desiredCoordinators = wait( change->getDesiredCoordinators( tr, old.coordinators(), Reference<ClusterConnectionFile>(new ClusterConnectionFile(old)), result ) );
+		*desiredCoordinators = _desiredCoordinators;
+	}
+
+	if (result != CoordinatorsResult::SUCCESS)
+		return result;
+
+	if (!desiredCoordinators->size())
+		return CoordinatorsResult::INVALID_NETWORK_ADDRESSES;
+
+	std::sort(desiredCoordinators->begin(), desiredCoordinators->end());
+
+	std::string newName = change->getDesiredClusterKeyName();
+	if (newName.empty()) newName = old.clusterKeyName().toString();
+
+	if ( old.coordinators() == *desiredCoordinators && old.clusterKeyName() == newName)
+		return CoordinatorsResult::SAME_NETWORK_ADDRESSES;
+
+	state ClusterConnectionString conn( *desiredCoordinators, StringRef( newName + ':' + deterministicRandom()->randomAlphaNumeric( 32 ) ) );
+
+	if(g_network->isSimulated()) {
+		for(int i = 0; i < (desiredCoordinators->size()/2)+1; i++) {
+			auto addresses = g_simulator.getProcessByAddress((*desiredCoordinators)[i])->addresses;
+
+			g_simulator.protectedAddresses.insert(addresses.address);
+			if(addresses.secondaryAddress.present()) {
+				g_simulator.protectedAddresses.insert(addresses.secondaryAddress.get());
+			}
+			TraceEvent("ProtectCoordinator").detail("Address", (*desiredCoordinators)[i]).backtrace();
+		}
+	}
+
+	vector<Future<Optional<LeaderInfo>>> leaderServers;
+	ClientCoordinators coord( Reference<ClusterConnectionFile>( new ClusterConnectionFile( conn ) ) );
+	for( int i = 0; i < coord.clientLeaderServers.size(); i++ )
+		leaderServers.push_back( retryBrokenPromise( coord.clientLeaderServers[i].getLeader, GetLeaderRequest( coord.clusterKey, UID() ), TaskPriority::CoordinationReply ) );
+
+	choose {
+		when( wait( waitForAll( leaderServers ) ) ) {}
+		when( wait( delay(5.0) ) ) {
+			return CoordinatorsResult::COORDINATOR_UNREACHABLE;
+		}
+	}
+	tr->set( coordinatorsKey, conn.toString() );
+	return Optional<CoordinatorsResult>();
+}
+
 ACTOR Future<CoordinatorsResult> changeQuorum(Database cx, Reference<IQuorumChange> change) {
 	state Transaction tr(cx);
 	state int retries = 0;
@@ -1058,11 +1121,12 @@ ACTOR Future<CoordinatorsResult> changeQuorum(Database cx, Reference<IQuorumChan
 
 			if(g_network->isSimulated()) {
 				for(int i = 0; i < (desiredCoordinators.size()/2)+1; i++) {
-					auto addresses = g_simulator.getProcessByAddress(desiredCoordinators[i])->addresses;
+					auto process = g_simulator.getProcessByAddress(desiredCoordinators[i]);
+					ASSERT(process->isReliable() || process->rebooting);
 
-					g_simulator.protectedAddresses.insert(addresses.address);
-					if(addresses.secondaryAddress.present()) {
-						g_simulator.protectedAddresses.insert(addresses.secondaryAddress.get());
+					g_simulator.protectedAddresses.insert(process->addresses.address);
+					if(process->addresses.secondaryAddress.present()) {
+						g_simulator.protectedAddresses.insert(process->addresses.secondaryAddress.get());
 					}
 					TraceEvent("ProtectCoordinator").detail("Address", desiredCoordinators[i]).backtrace();
 				}
@@ -1292,8 +1356,7 @@ struct AutoQuorumChange final : IQuorumChange {
 					continue;
 				}
 				// Exclude faulty node due to machine assassination
-				if (g_network->isSimulated() && g_simulator.protectedAddresses.count(worker->address) &&
-				    !g_simulator.getProcessByAddress(worker->address)->isReliable()) {
+				if (g_network->isSimulated() && !g_simulator.getProcessByAddress(worker->address)->isReliable()) {
 					TraceEvent("AutoSelectCoordinators").detail("SkipUnreliableWorker", worker->address.toString());
 					continue;
 				}
@@ -2232,6 +2295,12 @@ TEST_CASE("/ManagementAPI/AutoQuorumChange/checkLocality") {
 		data.locality.set(LiteralStringRef("zoneid"), StringRef(rack));
 		data.locality.set(LiteralStringRef("machineid"), StringRef(machineId));
 		data.address.ip = IPAddress(i);
+
+		if(g_network->isSimulated()) {
+			g_simulator.newProcess("TestCoordinator", data.address.ip, data.address.port, false, 1,
+			                       data.locality, ProcessClass(ProcessClass::CoordinatorClass, ProcessClass::CommandLineSource),
+			                       "", "", currentProtocolVersion);
+		}
 
 		workers.push_back(data);
 	}
